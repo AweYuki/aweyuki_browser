@@ -1,0 +1,84 @@
+name: Chromium Android baseline
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    if: ${{ github.event.repository.private && vars.CHROMIUM_RUNNER_LABEL != '' }}
+    runs-on: ${{ vars.CHROMIUM_RUNNER_LABEL }}
+    timeout-minutes: 360
+    env:
+      DEPOT_TOOLS_UPDATE: '0'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Check build host
+        shell: bash
+        run: |
+          test "$(uname -sm)" = 'Linux x86_64'
+          nproc
+          free -h
+          df -h "$RUNNER_TEMP"
+          test "$(df -B1 --output=avail "$RUNNER_TEMP" | tr -d ' ' | tail -1)" -ge 100000000000
+
+      - name: Fetch pinned Chromium and depot tools
+        shell: bash
+        run: |
+          source "$GITHUB_WORKSPACE/ci/chromium.lock"
+          cd "$RUNNER_TEMP"
+          git init -q depot_tools
+          git -C depot_tools fetch --depth=1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "$DEPOT_TOOLS_COMMIT"
+          git -C depot_tools checkout --detach FETCH_HEAD
+          test "$(git -C depot_tools rev-parse HEAD)" = "$DEPOT_TOOLS_COMMIT"
+          export PATH="$RUNNER_TEMP/depot_tools:$PATH"
+          printf '%s\n' "$RUNNER_TEMP/depot_tools" >> "$GITHUB_PATH"
+
+          mkdir chromium
+          cd chromium
+          git init -q src
+          git -C src remote add origin https://chromium.googlesource.com/chromium/src.git
+          git -C src fetch --depth=1 origin "refs/tags/$CHROMIUM_VERSION"
+          git -C src checkout --detach FETCH_HEAD
+          test "$(git -C src rev-parse HEAD)" = "$CHROMIUM_COMMIT"
+          gclient config --unmanaged --name=src https://chromium.googlesource.com/chromium/src.git
+          printf '\ntarget_os = ["android"]\n' >> .gclient
+          gclient sync --no-history --nohooks
+          test "$(git -C src rev-parse HEAD)" = "$CHROMIUM_COMMIT"
+
+      - name: Build unmodified ARM64 Chromium
+        shell: bash
+        working-directory: ${{ runner.temp }}/chromium/src
+        run: |
+          build/install-build-deps.sh --android --no-prompt
+          gclient runhooks
+          mkdir -p out/Baseline
+          cp "$GITHUB_WORKSPACE/ci/baseline.gn" out/Baseline/args.gn
+          gn gen out/Baseline --fail-on-unused-args
+          autoninja -C out/Baseline chrome_public_apk
+          git diff --exit-code HEAD --
+
+      - name: Record baseline build metadata
+        shell: bash
+        working-directory: ${{ runner.temp }}/chromium/src
+        run: |
+          mkdir "$RUNNER_TEMP/baseline-artifact"
+          cp out/Baseline/apks/ChromePublic.apk out/Baseline/args.gn \
+            "$GITHUB_WORKSPACE/ci/chromium.lock" "$RUNNER_TEMP/baseline-artifact/"
+          cd "$RUNNER_TEMP/baseline-artifact"
+          sha256sum ChromePublic.apk > SHA256SUMS
+          printf 'run_id=%s\nrun_attempt=%s\nrunner=%s\nimage=%s\nimage_version=%s\n' \
+            "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$RUNNER_NAME" \
+            "${ImageOS:-unknown}" "${ImageVersion:-unknown}" > build-info.txt
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: chromium-android-arm64-baseline
+          path: ${{ runner.temp }}/baseline-artifact/
+          if-no-files-found: error
+          retention-days: 7
