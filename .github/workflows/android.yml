@@ -60,6 +60,9 @@ jobs:
           git -C depot_tools checkout --detach FETCH_HEAD
           test "$(git -C depot_tools rev-parse HEAD)" = "$DEPOT_TOOLS_COMMIT"
           export PATH="$BUILD_ROOT/depot_tools:$PATH"
+          "$BUILD_ROOT/depot_tools/ensure_bootstrap"
+          "$BUILD_ROOT/depot_tools/python-bin/python3" --version
+          test "$(git -C depot_tools rev-parse HEAD)" = "$DEPOT_TOOLS_COMMIT"
           printf '%s\n' "$BUILD_ROOT/depot_tools" >> "$GITHUB_PATH"
 
           mkdir chromium
