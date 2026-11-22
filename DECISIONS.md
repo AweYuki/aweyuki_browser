@@ -7,6 +7,7 @@
 - Thử build thủ công trên runner miễn phí Ubuntu x64 của repo public. Mở rộng vùng build bằng action ghim theo SHA, rồi đo dung lượng thực thay vì giả định runner có 124 GB. Cho phép công khai log và APK baseline ký debug, không dùng khóa nội bộ hoặc đưa log thiết bị lên CI. Không build trên host ARM64. Repo private có thể dùng runner riêng qua `CHROMIUM_RUNNER_LABEL`.
 
 - [Lượt CI đầu](https://github.com/AweYuki/aweyuki_browser/actions/runs/45027367179) đạt 101 GiB trống và tải xong cây nguồn, nhưng hook DevTools dừng vì thiếu `python3_bin_reldir.txt`. Workflow gọi `ensure_bootstrap` và kiểm tra Python của `depot_tools` trước khi chạy hook, không bật lại tự cập nhật hoặc đổi commit đã ghim.
+- [Lượt CI thứ hai](https://github.com/AweYuki/aweyuki_browser/actions/runs/45029200804) chạy qua hooks và `gn gen`, nhưng Siso thiếu `v8/tools/builtins-pgo/profiles/x64.profile`. Bật `checkout_pgo_profiles` để các hook upstream tải profile đúng revision; giữ cấu hình tối ưu hóa của baseline.
 
 ## Cổng còn mở
 

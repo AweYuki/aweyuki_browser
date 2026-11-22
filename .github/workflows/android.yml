@@ -72,7 +72,8 @@ jobs:
           git -C src fetch --depth=1 origin "refs/tags/$CHROMIUM_VERSION"
           git -C src checkout --detach FETCH_HEAD
           test "$(git -C src rev-parse HEAD)" = "$CHROMIUM_COMMIT"
-          gclient config --unmanaged --name=src https://chromium.googlesource.com/chromium/src.git
+          gclient config --unmanaged --name=src --custom-var checkout_pgo_profiles=True \
+            https://chromium.googlesource.com/chromium/src.git
           printf '\ntarget_os = ["android"]\n' >> .gclient
           gclient sync --no-history --nohooks
           test "$(git -C src rev-parse HEAD)" = "$CHROMIUM_COMMIT"
