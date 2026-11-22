@@ -2,11 +2,11 @@
 
 Mốc hiện tại: chuẩn bị build Chromium Android ARM64 nguyên bản. Repo public chỉ chứa cấu hình và tài liệu; chưa có APK, patch extension hoặc giao diện profile.
 
-## Build baseline nội bộ
+## Build baseline
 
-Workflow `.github/workflows/android.yml` chỉ chạy thủ công trong **repo private** có biến Actions `CHROMIUM_RUNNER_LABEL` trỏ đến GitHub-hosted larger runner Ubuntu x64 có quyền truy cập repo. Cấu hình khởi điểm đề xuất: 16 vCPU, 64 GB RAM, SSD 600 GB. Không đặt biến này để chạy build trong repo public và không đưa APK, log thiết bị hoặc khóa ký lên đó.
+Workflow `.github/workflows/android.yml` chạy thủ công. Trong repo public, job dùng `ubuntu-24.04`, mở rộng vùng build và dừng trước khi tải source nếu còn dưới 100 GB. Log build và artifact baseline công khai; không dùng khóa riêng hay đưa log thiết bị vào job. Repo private có thể đặt `CHROMIUM_RUNNER_LABEL` để dùng runner Linux x64 đã cấp quyền.
 
-`ci/chromium.lock` ghim tag, commit Chromium và commit `depot_tools`; `ci/baseline.gn` là cấu hình release không branding Chrome. Workflow lấy phụ thuộc theo `DEPS`, build `//chrome/android:chrome_public_apk` và lưu APK, checksum, GN args và metadata run với thời hạn 7 ngày trong repo private.
+`ci/chromium.lock` ghim tag, commit Chromium và commit `depot_tools`; `ci/baseline.gn` là cấu hình release không branding Chrome. Workflow lấy phụ thuộc theo `DEPS`, build `//chrome/android:chrome_public_apk` và lưu APK, checksum, GN args và metadata run với thời hạn 7 ngày nếu thành công.
 
 Baseline giữ package và khóa debug mặc định của upstream, chỉ dùng trên máy thử. Bản phân phối nội bộ sau đó cần package ID riêng, khóa test ổn định lưu ngoài Git, và `versionCode` tăng cho lần cài đè. Không coi việc chuyển từ package baseline sang package riêng là kiểm thử cập nhật.
 

@@ -8,12 +8,26 @@ permissions:
 
 jobs:
   baseline:
-    if: ${{ github.event.repository.private && vars.CHROMIUM_RUNNER_LABEL != '' }}
-    runs-on: ${{ vars.CHROMIUM_RUNNER_LABEL }}
-    timeout-minutes: 360
+    if: ${{ !github.event.repository.private || vars.CHROMIUM_RUNNER_LABEL != '' }}
+    runs-on: ${{ github.event.repository.private && vars.CHROMIUM_RUNNER_LABEL || 'ubuntu-24.04' }}
     env:
       DEPOT_TOOLS_UPDATE: '0'
+      PUBLIC_BUILD_ROOT: /opt/chromium-build
+    timeout-minutes: 360
     steps:
+      - name: Expand disk on public hosted runner
+        if: ${{ !github.event.repository.private }}
+        uses: easimon/maximize-build-space@fc881a613ad2a34aca9c9624518214ebc21dfc0c # v10
+        with:
+          build-mount-path: ${{ env.PUBLIC_BUILD_ROOT }}
+          root-reserve-mb: '8192'
+          temp-reserve-mb: '3072'
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
@@ -24,20 +38,29 @@ jobs:
           test "$(uname -sm)" = 'Linux x86_64'
           nproc
           free -h
-          df -h "$RUNNER_TEMP"
-          test "$(df -B1 --output=avail "$RUNNER_TEMP" | tr -d ' ' | tail -1)" -ge 100000000000
+          build_root="$RUNNER_TEMP"
+          if [[ "$RUNNER_ENVIRONMENT" == 'github-hosted' ]] && mountpoint -q "$PUBLIC_BUILD_ROOT"; then
+            build_root="$PUBLIC_BUILD_ROOT"
+          fi
+          df -h "$build_root"
+          available=$(df -B1 --output=avail "$build_root" | tail -1)
+          if (( available < 100000000000 )); then
+            printf 'Chromium needs 100 GB free; %s bytes available on %s.\n' "$available" "$build_root" >&2
+            exit 1
+          fi
+          printf 'BUILD_ROOT=%s\n' "$build_root" >> "$GITHUB_ENV"
 
       - name: Fetch pinned Chromium and depot tools
         shell: bash
         run: |
           source "$GITHUB_WORKSPACE/ci/chromium.lock"
-          cd "$RUNNER_TEMP"
+          cd "$BUILD_ROOT"
           git init -q depot_tools
           git -C depot_tools fetch --depth=1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "$DEPOT_TOOLS_COMMIT"
           git -C depot_tools checkout --detach FETCH_HEAD
           test "$(git -C depot_tools rev-parse HEAD)" = "$DEPOT_TOOLS_COMMIT"
-          export PATH="$RUNNER_TEMP/depot_tools:$PATH"
-          printf '%s\n' "$RUNNER_TEMP/depot_tools" >> "$GITHUB_PATH"
+          export PATH="$BUILD_ROOT/depot_tools:$PATH"
+          printf '%s\n' "$BUILD_ROOT/depot_tools" >> "$GITHUB_PATH"
 
           mkdir chromium
           cd chromium
@@ -53,8 +76,8 @@ jobs:
 
       - name: Build unmodified ARM64 Chromium
         shell: bash
-        working-directory: ${{ runner.temp }}/chromium/src
         run: |
+          cd "$BUILD_ROOT/chromium/src"
           build/install-build-deps.sh --android --no-prompt
           gclient runhooks
           mkdir -p out/Baseline
@@ -65,8 +88,8 @@ jobs:
 
       - name: Record baseline build metadata
         shell: bash
-        working-directory: ${{ runner.temp }}/chromium/src
         run: |
+          cd "$BUILD_ROOT/chromium/src"
           mkdir "$RUNNER_TEMP/baseline-artifact"
           cp out/Baseline/apks/ChromePublic.apk out/Baseline/args.gn \
             "$GITHUB_WORKSPACE/ci/chromium.lock" "$RUNNER_TEMP/baseline-artifact/"
